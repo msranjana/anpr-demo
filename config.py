@@ -10,7 +10,22 @@ RTSP_URL = os.getenv("RTSP_URL", "")
 LOG_FILE_PATH = os.getenv("LOG_FILE_PATH", "logs/events.log")
 RECONNECT_DELAY = int(os.getenv("RECONNECT_DELAY", "5"))
 
-SMOKE_FIRE_MODEL_PATH = os.getenv("SMOKE_FIRE_MODEL_PATH", "models/fire_smoke_yolov8n.pt")
+# Moondream2 0.5B int4 ONNX bundle (auto-downloaded from HuggingFace when missing)
+MOONDREAM_MODEL_PATH = os.getenv(
+    "MOONDREAM_MODEL_PATH", "models/moondream/moondream-0_5b-int4.mf.gz"
+)
+MOONDREAM_REPO_ID = os.getenv("MOONDREAM_REPO_ID", "vikhyatk/moondream2")
+MOONDREAM_MODEL_FILE = os.getenv("MOONDREAM_MODEL_FILE", "moondream-0_5b-int4.mf.gz")
+MOONDREAM_REPO_REVISION = os.getenv(
+    "MOONDREAM_REPO_REVISION", "9dddae84d54db4ac56fe37817aeaeb502ed083e2"
+)
+
+ANPR_PROMPT = os.getenv(
+    "ANPR_PROMPT",
+    "What is the vehicle license plate number visible in this image? "
+    "Reply with only the plate number, or 'none' if no plate is visible.",
+)
+ANPR_FPS = int(os.getenv("ANPR_FPS", "1"))
 
 SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))

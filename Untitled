@@ -7,8 +7,12 @@ LOG_FILE_PATH=logs/events.log
 # Seconds to wait before reconnecting to the camera after a read failure
 RECONNECT_DELAY=5
 
-# Detection models
-SMOKE_FIRE_MODEL_PATH=models/fire_smoke_yolov8n.pt
+# Moondream2 0.5B int4 (downloaded automatically on first run if missing)
+MOONDREAM_MODEL_PATH=models/moondream/moondream-0_5b-int4.mf.gz
+MOONDREAM_REPO_ID=vikhyatk/moondream2
+MOONDREAM_MODEL_FILE=moondream-0_5b-int4.mf.gz
+MOONDREAM_REPO_REVISION=9dddae84d54db4ac56fe37817aeaeb502ed083e2
+ANPR_FPS=1
 
 # Alert engine (SMTP) - leave empty until the mail account is ready
 SMTP_HOST=

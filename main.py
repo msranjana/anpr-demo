@@ -9,7 +9,7 @@ import time
 
 import config
 from console import say
-from detectors.smoke_and_fire_detector import SmokeAndFireDetector
+from detectors.anpr_detector import AnprDetector
 from engines.alert_engine import AlertEngine
 from engines.event_engine import EventEngine
 from services.DetectionWrapper import DetectionWrapper
@@ -19,7 +19,7 @@ from services.RTSPService import RTSPService
 def build_detections():
     """Return the detections to run. DetectionWrapper(name, fps, detector)."""
     return [
-        DetectionWrapper("smoke_and_fire_detection", 2, SmokeAndFireDetector()),
+        DetectionWrapper("anpr_detection", config.ANPR_FPS, AnprDetector()),
     ]
 
 
