@@ -4,6 +4,8 @@ import os
 
 from dotenv import load_dotenv
 
+# Load Untitled (project env template); .env overrides if present.
+load_dotenv("Untitled")
 load_dotenv()
 
 RTSP_URL = os.getenv("RTSP_URL", "")
