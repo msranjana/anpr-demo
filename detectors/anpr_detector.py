@@ -1,120 +1,106 @@
-"""Automatic number plate recognition using Moondream2 ONNX (int4 .mf.gz bundle)."""
+"""Hybrid ANPR: EasyOCR on preprocessed crops + Moondream VLM on raw crops."""
 
-import os
-import re
 import time
-
-import cv2
-from PIL import Image
 
 import config
 from detectors.base_detector import BaseDetector
+from detectors.moondream_reader import get_model, read_plate_vlm
+from detectors.plate_localizer import detect_and_crop_plate
+from detectors.plate_ocr import get_reader, read_plate
+from detectors.plate_voter import PlateVoter
 from engines.alert_engine import AlertType
 
 
 class AnprDetector(BaseDetector):
-    """Reads license plates from CCTV frames with the quantized Moondream2 0.5B model."""
-
-    _PLATE_PATTERN = re.compile(r"[A-Z0-9][A-Z0-9\s\-]{3,}[A-Z0-9]")
-    _REJECT_PATTERN = re.compile(
-        r"\b(none|unknown|not visible|no plate|n/?a|cannot|can't|unable)\b",
-        re.IGNORECASE,
-    )
+    """Localizes plates, reads with EasyOCR + Moondream, confirms via consensus voting."""
 
     def __init__(
         self,
-        model_path=None,
-        prompt=None,
-        max_new_tokens=32,
-        min_plate_length=4,
-        alert_cooldown=15,
+        gpu=None,
+        use_moondream=None,
+        alert_cooldown=None,
+        min_plate_length=None,
+        max_plate_length=None,
+        voter_window=None,
+        voter_min_votes=None,
     ):
         super().__init__()
-        self.model_path = model_path or config.MOONDREAM_MODEL_PATH
-        self.prompt = prompt or config.ANPR_PROMPT
-        self.max_new_tokens = max_new_tokens
-        self.min_plate_length = min_plate_length
-        self.alert_cooldown = alert_cooldown
+        self.gpu = gpu if gpu is not None else config.EASYOCR_GPU
+        self.use_moondream = use_moondream if use_moondream is not None else config.MOONDREAM_ENABLED
+        self.alert_cooldown = alert_cooldown if alert_cooldown is not None else config.ANPR_ALERT_COOLDOWN
+        self.min_plate_length = (
+            min_plate_length if min_plate_length is not None else config.ANPR_MIN_PLATE_LENGTH
+        )
+        self.max_plate_length = (
+            max_plate_length if max_plate_length is not None else config.ANPR_MAX_PLATE_LENGTH
+        )
 
-        self._model = None
+        self._reader = None
+        self._vlm = None
+        self._voter = PlateVoter(
+            window=voter_window if voter_window is not None else config.ANPR_VOTER_WINDOW,
+            min_votes=voter_min_votes if voter_min_votes is not None else config.ANPR_VOTER_MIN_VOTES,
+        )
         self._last_alert_at = {}
 
     def on_start(self):
-        import moondream as md
+        self.log(f"loading EasyOCR (gpu={self.gpu})...")
+        self._reader = get_reader(gpu=self.gpu)
+        self.log("EasyOCR loaded")
 
-        path = self.model_path
-        if not os.path.isfile(path):
-            self.log(f"downloading Moondream ONNX from {config.MOONDREAM_REPO_ID}...")
-            path = self._resolve_model_path()
-
-        self.log(f"loading Moondream ONNX from {path}...")
-        self._model = md.vl(model=path)
-        self.log("Moondream ONNX model loaded")
+        if self.use_moondream:
+            self._vlm = get_model(log=self.log)
 
     def process(self, frame):
-        answer = self._ask(frame)
-        plate = self._parse_plate(answer)
-        if not plate:
+        plate_crop = detect_and_crop_plate(frame, self._reader)
+        if plate_crop is None:
             return
 
-        if not self._cooldown_passed(plate):
+        ocr_text = read_plate(
+            plate_crop,
+            self._reader,
+            min_length=self.min_plate_length,
+            max_length=self.max_plate_length,
+        )
+        vlm_text = None
+        if self.use_moondream and self._vlm is not None:
+            vlm_text = read_plate_vlm(
+                plate_crop,
+                model=self._vlm,
+                min_length=self.min_plate_length,
+                max_length=self.max_plate_length,
+            )
+
+        self._add_reads(ocr_text, vlm_text)
+
+        confirmed = self._voter.get_consensus()
+        if not confirmed:
             return
+
+        if not self._cooldown_passed(confirmed):
+            return
+
+        sources = []
+        if ocr_text:
+            sources.append(f"ocr={ocr_text}")
+        if vlm_text:
+            sources.append(f"vlm={vlm_text}")
 
         self.alert(
             self.to_base64(frame),
             AlertType.NORMAL,
-            f"plate detected: {plate} (vlm: {answer})",
+            f"plate detected: {confirmed} ({', '.join(sources)})",
         )
 
-    def _resolve_model_path(self):
-        if config.MOONDREAM_MODEL_PATH and os.path.isfile(config.MOONDREAM_MODEL_PATH):
-            return config.MOONDREAM_MODEL_PATH
+    def _add_reads(self, ocr_text, vlm_text):
+        if ocr_text and vlm_text and ocr_text == vlm_text:
+            self._voter.add(ocr_text)
+            return
 
-        folder = os.path.dirname(config.MOONDREAM_MODEL_PATH) or "models/moondream"
-        os.makedirs(folder, exist_ok=True)
-
-        from huggingface_hub import hf_hub_download
-
-        return hf_hub_download(
-            repo_id=config.MOONDREAM_REPO_ID,
-            filename=config.MOONDREAM_MODEL_FILE,
-            revision=config.MOONDREAM_REPO_REVISION,
-            local_dir=folder,
-        )
-
-    def _ask(self, frame):
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pil_image = Image.fromarray(rgb)
-
-        result = self._model.query(
-            pil_image,
-            self.prompt,
-            settings={"max_tokens": self.max_new_tokens},
-        )
-        return (result.get("answer") or "").strip()
-
-    def _parse_plate(self, answer):
-        text = (answer or "").strip()
-        if not text or self._REJECT_PATTERN.search(text):
-            return None
-
-        text = re.sub(
-            r"^(license plate|plate number|number plate)\s*[:\-]?\s*",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        )
-        text = text.strip(" .\"'")
-        text = re.sub(r"\s+", " ", text).upper()
-
-        match = self._PLATE_PATTERN.search(text)
-        if not match:
-            return None
-
-        plate = re.sub(r"\s+", "", match.group(0))
-        if len(plate) < self.min_plate_length:
-            return None
-        return plate
+        if ocr_text:
+            self._voter.add(ocr_text)
+        if vlm_text:
+            self._voter.add(vlm_text)
 
     def _cooldown_passed(self, plate):
         now = time.time()

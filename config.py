@@ -12,7 +12,11 @@ RTSP_URL = os.getenv("RTSP_URL", "")
 LOG_FILE_PATH = os.getenv("LOG_FILE_PATH", "logs/events.log")
 RECONNECT_DELAY = int(os.getenv("RECONNECT_DELAY", "5"))
 
-# Moondream2 0.5B int4 ONNX bundle (auto-downloaded from HuggingFace when missing)
+ANPR_FPS = int(os.getenv("ANPR_FPS", "2"))
+EASYOCR_GPU = os.getenv("EASYOCR_GPU", "false").lower() in {"1", "true", "yes"}
+
+# Moondream VLM reads raw plate crops without preprocessing (hybrid with EasyOCR)
+MOONDREAM_ENABLED = os.getenv("MOONDREAM_ENABLED", "true").lower() in {"1", "true", "yes"}
 MOONDREAM_MODEL_PATH = os.getenv(
     "MOONDREAM_MODEL_PATH", "models/moondream/moondream-0_5b-int4.mf.gz"
 )
@@ -21,13 +25,17 @@ MOONDREAM_MODEL_FILE = os.getenv("MOONDREAM_MODEL_FILE", "moondream-0_5b-int4.mf
 MOONDREAM_REPO_REVISION = os.getenv(
     "MOONDREAM_REPO_REVISION", "9dddae84d54db4ac56fe37817aeaeb502ed083e2"
 )
-
-ANPR_PROMPT = os.getenv(
-    "ANPR_PROMPT",
-    "What is the vehicle license plate number visible in this image? "
-    "Reply with only the plate number, or 'none' if no plate is visible.",
+MOONDREAM_ANPR_PROMPT = os.getenv(
+    "MOONDREAM_ANPR_PROMPT",
+    "Read the license plate characters in this image. "
+    "Reply with only the plate number, or 'none' if unreadable.",
 )
-ANPR_FPS = int(os.getenv("ANPR_FPS", "1"))
+MOONDREAM_MAX_TOKENS = int(os.getenv("MOONDREAM_MAX_TOKENS", "32"))
+ANPR_MIN_PLATE_LENGTH = int(os.getenv("ANPR_MIN_PLATE_LENGTH", "4"))
+ANPR_MAX_PLATE_LENGTH = int(os.getenv("ANPR_MAX_PLATE_LENGTH", "12"))
+ANPR_VOTER_WINDOW = int(os.getenv("ANPR_VOTER_WINDOW", "5"))
+ANPR_VOTER_MIN_VOTES = int(os.getenv("ANPR_VOTER_MIN_VOTES", "3"))
+ANPR_ALERT_COOLDOWN = int(os.getenv("ANPR_ALERT_COOLDOWN", "15"))
 
 SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
